@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 # --- CONFIGURATION ---
-BOT_TOKEN = "8644365577:AAGd6r0jnYq4gmh81EAhz5MV6orQ7akEs6U"
+BOT_TOKEN = "8644365577:AAHgF93PupGEMqFKaDUfXU1IpauRZHMJui8"
 ADMIN_USERNAME = "alirezaaghdasii"
 
 # --- 1. DUMMY WEB SERVER FOR RENDER ---
