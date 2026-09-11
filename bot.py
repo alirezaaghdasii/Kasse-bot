@@ -12,6 +12,10 @@ from telegram.ext import (
     filters
 )
 
+# --- CONFIGURATION ---
+BOT_TOKEN = "8644365577:AAGd6r0jnYq4gmh81EAhz5MV6orQ7akEs6U"
+ADMIN_USERNAME = "alirezaaghdasii"
+
 # --- 1. DUMMY WEB SERVER FOR RENDER ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -20,7 +24,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
 
 def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
@@ -129,10 +133,6 @@ RECORDS = []
 # States
 SELECT_LANG, SELECT_BRANCH, MAIN_MENU, SELECT_SHIFT, ENTER_AMOUNT = range(5)
 
-def get_text(user_id, key):
-    lang = USER_LANGS.get(user_id, 'fa')
-    return LANGUAGES[lang].get(key, '')
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id in USER_LANGS:
@@ -158,7 +158,6 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     USER_LANGS[user_id] = selected_code
     
-    # Prompt branch selection right after setting language
     lang = selected_code
     branches = LANGUAGES[lang]['branches']
     keyboard = [[b] for b in branches]
@@ -266,13 +265,15 @@ async def enter_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ENTER_AMOUNT
 
     now = datetime.now()
+    user_display = update.effective_user.username or update.effective_user.first_name
+    
     record = {
         'date': now.strftime("%Y-%m-%d"),
         'time': now.strftime("%H:%M"),
         'branch': context.user_data.get('branch', 'Ludwigshafen'),
         'shift': context.user_data.get('shift'),
         'amount': amount,
-        'user': update.effective_user.first_name
+        'user': user_display
     }
     RECORDS.append(record)
 
@@ -290,12 +291,7 @@ async def enter_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await show_main_menu(update, context)
 
 def main():
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
-        print("Error: TELEGRAM_BOT_TOKEN environment variable is not set!")
-        return
-
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
