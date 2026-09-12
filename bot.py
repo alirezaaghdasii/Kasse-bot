@@ -14,9 +14,14 @@ from telegram.ext import (
 
 # --- CONFIGURATION ---
 BOT_TOKEN = "8644365577:AAHgF93PupGEMqFKaDUfXU1IpauRZHMJui8"
+
+# آیدی مدیر کل
 ADMIN_USERNAME = "alirezaaghdasii"
 
-# --- 1. DUMMY WEB SERVER FOR RENDER ---
+# لیست آیدی‌های مجاز (بدون @). آیدی کارمندان را اینجا اضافه کنید:
+ALLOWED_USERS = ["alirezaaghdasii", "EMPLOYEE_USERNAME_1", "EMPLOYEE_USERNAME_2"]
+
+# --- DUMMY WEB SERVER FOR RENDER ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -30,7 +35,7 @@ def run_web_server():
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# --- 2. TRANSLATIONS & DICTIONARY ---
+# --- TRANSLATIONS & DICTIONARY ---
 LANGUAGES = {
     'fa': {
         'name': '🇮🇷 فارسی',
@@ -39,7 +44,7 @@ LANGUAGES = {
         'choose_branch': 'لطفاً شعبه مورد نظر را انتخاب کنید:',
         'main_menu': 'منوی اصلی:',
         'btn_register': '➕ ثبت صندوق جدید',
-        'btn_report': '📊 گزارش امروز',
+        'btn_report': '📊 گزارش امروز (مدیر)',
         'btn_lang': '🌐 تغییر زبان',
         'choose_shift': 'نوبت صندوق را انتخاب کنید:',
         'enter_amount': 'لطفاً مبلغ صندوق {shift} را به یورو وارد کنید (مثلاً 450.50):',
@@ -50,6 +55,7 @@ LANGUAGES = {
         'shift_empty': '🔹 صندوق {shift}: ثبت نشده\n',
         'total_amount': '\n💵 **جمع کل امروز: €{total:.2f}**',
         'no_records': 'هیچ رکوردی برای امروز ثبت نشده است.',
+        'access_denied': '⛔️ شما اجازه استفاده از این ربات را ندارید.',
         'shift_1': 'صندوق ۱ (۱۸:۰۰)',
         'shift_2': 'صندوق ۲ (۲۴:۰۰)',
         'shift_3': 'صندوق ۳ (پایان کار)',
@@ -62,7 +68,7 @@ LANGUAGES = {
         'choose_branch': 'Bitte wählen Sie die Filiale:',
         'main_menu': 'Hauptmenü:',
         'btn_register': '➕ Neue Kasse eingeben',
-        'btn_report': '📊 Tagesbericht',
+        'btn_report': '📊 Tagesbericht (Admin)',
         'btn_lang': '🌐 Sprache ändern',
         'choose_shift': 'Bitte Schicht wählen:',
         'enter_amount': 'Bitte Betrag für {shift} in Euro eingeben (z.B. 450.50):',
@@ -73,6 +79,7 @@ LANGUAGES = {
         'shift_empty': '🔹 Kasse {shift}: Nicht erfasst\n',
         'total_amount': '\n💵 **Gesamtsumme heute: €{total:.2f}**',
         'no_records': 'Heute wurden noch keine Einträge gemacht.',
+        'access_denied': '⛔️ Zugriff verweigert.',
         'shift_1': 'Kasse 1 (18:00)',
         'shift_2': 'Kasse 2 (24:00)',
         'shift_3': 'Kasse 3 (Feierabend)',
@@ -85,7 +92,7 @@ LANGUAGES = {
         'choose_branch': 'Lütfen şubeyi seçin:',
         'main_menu': 'Ana Menü:',
         'btn_register': '➕ Yeni Kasa Ekle',
-        'btn_report': '📊 Günlük Rapor',
+        'btn_report': '📊 Günlük Rapor (Yönetici)',
         'btn_lang': '🌐 Dili Değiştir',
         'choose_shift': 'Kasa vardiyasını seçin:',
         'enter_amount': 'Lütfen {shift} miktarını Euro olarak girin (örnek: 450.50):',
@@ -96,6 +103,7 @@ LANGUAGES = {
         'shift_empty': '🔹 Kasa {shift}: Girilmedi\n',
         'total_amount': '\n💵 **Bugünkü Toplam: €{total:.2f}**',
         'no_records': 'Bugün için henüz kayıt bulunmamaktadır.',
+        'access_denied': '⛔️ Bu botu kullanma izniniz yok.',
         'shift_1': 'Kasa 1 (18:00)',
         'shift_2': 'Kasa 2 (24:00)',
         'shift_3': 'Kasa 3 (Kapanış)',
@@ -108,7 +116,7 @@ LANGUAGES = {
         'choose_branch': 'الرجاء اختيار الفرع:',
         'main_menu': 'القائمة الرئيسية:',
         'btn_register': '➕ تسجيل صندوق جديد',
-        'btn_report': '📊 التقرير اليومي',
+        'btn_report': '📊 التقرير اليومي (المسؤول)',
         'btn_lang': '🌐 تغيير اللغة',
         'choose_shift': 'اختر وردية الصندوق:',
         'enter_amount': 'الرجاء إدخال مبلغ الصندوق {shift} باليورو (مثال: 450.50):',
@@ -119,6 +127,7 @@ LANGUAGES = {
         'shift_empty': '🔹 الصندوق {shift}: لم يسجل\n',
         'total_amount': '\n💵 **المجموع الكلي اليوم: €{total:.2f}**',
         'no_records': 'لا توجد سجلات لليوم.',
+        'access_denied': '⛔️ ليس لديك صلاحية لاستخدام هذا البوت.',
         'shift_1': 'صندوق ۱ (۱۸:۰۰)',
         'shift_2': 'صندوق ۲ (۲۴:۰۰)',
         'shift_3': 'صندوق ۳ (الإغلاق)',
@@ -126,14 +135,22 @@ LANGUAGES = {
     }
 }
 
-# In-memory DB
 USER_LANGS = {}
 RECORDS = []
 
-# States
 SELECT_LANG, SELECT_BRANCH, MAIN_MENU, SELECT_SHIFT, ENTER_AMOUNT = range(5)
 
+def is_user_allowed(username):
+    if not username:
+        return False
+    return username.lower() in [u.lower() for u in ALLOWED_USERS]
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    username = update.effective_user.username
+    if not is_user_allowed(username):
+        await update.message.reply_text("⛔️ دسترسی شما به این ربات مجاز نیست / Access Denied.")
+        return ConversationHandler.END
+
     user_id = update.effective_user.id
     if user_id in USER_LANGS:
         return await show_main_menu(update, context)
@@ -173,13 +190,17 @@ async def select_branch(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    username = update.effective_user.username
     lang = USER_LANGS.get(user_id, 'fa')
     
-    keyboard = [
-        [LANGUAGES[lang]['btn_register']],
-        [LANGUAGES[lang]['btn_report']],
-        [LANGUAGES[lang]['btn_lang']]
-    ]
+    keyboard = [[LANGUAGES[lang]['btn_register']]]
+    
+    # فقط اگر کاربر مدیر اصلی باشد دکمه گزارش نشان داده می‌شود
+    if username and username.lower() == ADMIN_USERNAME.lower():
+        keyboard.append([LANGUAGES[lang]['btn_report']])
+        
+    keyboard.append([LANGUAGES[lang]['btn_lang']])
+    
     await update.message.reply_text(
         LANGUAGES[lang]['main_menu'],
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -188,6 +209,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    username = update.effective_user.username
     lang = USER_LANGS.get(user_id, 'fa')
     text = update.message.text
 
@@ -203,7 +225,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return SELECT_SHIFT
 
-    elif text == LANGUAGES[lang]['btn_report']:
+    elif text == LANGUAGES[lang]['btn_report'] and username and username.lower() == ADMIN_USERNAME.lower():
         today_str = datetime.now().strftime("%Y-%m-%d")
         branch = context.user_data.get('branch', 'Ludwigshafen')
         
