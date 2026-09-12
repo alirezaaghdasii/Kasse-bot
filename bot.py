@@ -33,7 +33,7 @@ BOT_TOKEN = "8644365577:AAHXHFZOdsGZmrvKPHBrzUjzNzEf9_0dDks"
 ADMIN_USERNAME = "alirezaaghdasii"
 
 ALLOWED_USERS = [
-    "alirezaaghdasii,Ebrahim_Kh_d"
+    "alirezaaghdasii"
 ]
 
 # سه شعبه واقعی
