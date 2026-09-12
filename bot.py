@@ -2,7 +2,7 @@ import os
 import io
 import sqlite3
 import threading
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -53,7 +53,11 @@ BRANCHES = [
 ]
 
 # زمان آلمان
-GERMANY_TZ = ZoneInfo("Europe/Berlin")
+try:
+    GERMANY_TZ = ZoneInfo("Europe/Berlin")
+except Exception:
+    from datetime import timezone
+    GERMANY_TZ = timezone(timedelta(hours=2))
 
 
 # ============================================================
@@ -243,6 +247,28 @@ LANGUAGES = {
         "back_main":
             "🔙 به منوی اصلی برگشتید.",
 
+        "confirm_title":
+            "⚠️ **لطفاً اطلاعات را با دقت بررسی و تایید کنید:**\n\n"
+            "📍 **شعبه:** {branch}\n"
+            "📦 **نوبت صندوق:** {shift}\n"
+            "💰 **مبلغ:** €{amount:.2f}\n\n"
+            "آیا مبلغ وارد شده مورد تایید است؟",
+
+        "btn_confirm":
+            "✅ تایید و ثبت نهایی",
+
+        "btn_edit_amount":
+            "✏️ اصلاح مبلغ",
+
+        "btn_cancel":
+            "❌ انصراف",
+
+        "all_shifts_done":
+            "✅ تمامی ۳ نوبت صندوق امروز برای شعبه {branch} قبلاً ثبت شده‌اند.",
+
+        "action_cancelled":
+            "❌ عملیات ثبت صندوق لغو شد.",
+
         "branches":
             BRANCHES
     },
@@ -343,6 +369,19 @@ LANGUAGES = {
 
         "back_main": "🔙 Zurück zum Hauptmenü.",
 
+        "confirm_title":
+            "⚠️ **Bitte Angaben überprüfen und bestätigen:**\n\n"
+            "📍 **Filiale:** {branch}\n"
+            "📦 **Kasse:** {shift}\n"
+            "💰 **Betrag:** €{amount:.2f}\n\n"
+            "Ist der eingegebene Betrag korrekt?",
+
+        "btn_confirm": "✅ Bestätigen und speichern",
+        "btn_edit_amount": "✏️ Betrag korrigieren",
+        "btn_cancel": "❌ Abbrechen",
+        "all_shifts_done": "✅ Alle 3 Kassen für die Filiale {branch} wurden heute bereits eingetragen.",
+        "action_cancelled": "❌ Kassenbuchung abgebrochen.",
+
         "branches": BRANCHES
     },
 
@@ -439,6 +478,19 @@ LANGUAGES = {
             "📊 Seçilen tarih aralığı için kasa raporu",
 
         "back_main": "🔙 Ana menüye dönüldü.",
+
+        "confirm_title":
+            "⚠️ **Lütfen bilgileri kontrol edip onaylayınız:**\n\n"
+            "📍 **Şube:** {branch}\n"
+            "📦 **Kasa:** {shift}\n"
+            "💰 **Tutar:** €{amount:.2f}\n\n"
+            "Girilen miktar doğru mu?",
+
+        "btn_confirm": "✅ Onayla ve Kaydet",
+        "btn_edit_amount": "✏️ Tutarı Düzelt",
+        "btn_cancel": "❌ İptal",
+        "all_shifts_done": "✅ {branch} şubesi için bugünkü tüm 3 kasa zaten kaydedilmiştir.",
+        "action_cancelled": "❌ Kasa kaydı iptal edildi.",
 
         "branches": BRANCHES
     },
@@ -537,6 +589,19 @@ LANGUAGES = {
 
         "back_main": "🔙 تم الرجوع إلى القائمة الرئيسية.",
 
+        "confirm_title":
+            "⚠️ **يرجى مراجعة وتأكيد البيانات:**\n\n"
+            "📍 **الفرع:** {branch}\n"
+            "📦 **الصندوق:** {shift}\n"
+            "💰 **المبلغ:** €{amount:.2f}\n\n"
+            "هل المبلغ المدخل صحيح؟",
+
+        "btn_confirm": "✅ تأكيد وحفظ",
+        "btn_edit_amount": "✏️ تعديل المبلغ",
+        "btn_cancel": "❌ إلغاء",
+        "all_shifts_done": "✅ تم تسجيل جميع الصناديق الثلاثة لفرع {branch} اليوم.",
+        "action_cancelled": "❌ تم إلغاء عملية التسجيل.",
+
         "branches": BRANCHES
     }
 }
@@ -552,6 +617,7 @@ LANGUAGES = {
     MAIN_MENU,
     SELECT_SHIFT,
     ENTER_AMOUNT,
+    CONFIRM_AMOUNT,
     REPORT_TYPE,
     REPORT_START_DATE,
     REPORT_END_DATE,
@@ -559,7 +625,7 @@ LANGUAGES = {
     EXCEL_START_DATE,
     EXCEL_END_DATE,
     EXCEL_BRANCH
-) = range(12)
+) = range(13)
 
 
 # ============================================================
@@ -744,6 +810,67 @@ def parse_date(date_text):
         return None
 
 
+def get_business_date():
+    """
+    تاریخ روز کاری را برمی‌گرداند.
+    در ساعت‌های ۰۰:۰۰ تا ۰۵:۰۰ بامداد، شیفت متعلق به نوبت کاری شب قبل (پایان کار) محسوب می‌شود.
+    """
+    now = datetime.now(GERMANY_TZ)
+    if now.hour < 5:
+        return (now.date() - timedelta(days=1)).strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
+
+
+def get_registered_shifts_today(branch):
+    """
+    مجموعه شماره نوبت‌های ثبت‌شده (1، 2، 3) برای یک شعبه در تاریخ کاری جاری.
+    """
+    b_date = get_business_date()
+    today_cal = datetime.now(GERMANY_TZ).strftime("%Y-%m-%d")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT shift FROM records
+        WHERE branch = ? AND (date = ? OR date = ?)
+        """,
+        (branch, b_date, today_cal)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    registered = set()
+    for row in rows:
+        s = str(row["shift"])
+        if any(s == LANGUAGES[l]["shift_1"] for l in LANGUAGES) or "1" in s or "۱" in s:
+            registered.add(1)
+        if any(s == LANGUAGES[l]["shift_2"] for l in LANGUAGES) or "2" in s or "۲" in s:
+            registered.add(2)
+        if any(s == LANGUAGES[l]["shift_3"] for l in LANGUAGES) or "3" in s or "۳" in s:
+            registered.add(3)
+
+    return registered
+
+
+def get_next_available_shift_num(branch):
+    """
+    تعیین نوبت بعدی صندوق به ترتیب:
+    ۱ -> ۲ -> ۳
+    اگر تمام صندوق‌ها ثبت شده باشند، None برمی‌گرداند.
+    """
+    registered = get_registered_shifts_today(branch)
+
+    if 1 not in registered:
+        return 1
+    elif 2 not in registered:
+        return 2
+    elif 3 not in registered:
+        return 3
+    else:
+        return None
+
+
 # ============================================================
 # START
 # ============================================================
@@ -924,21 +1051,36 @@ async def handle_main_menu(update, context):
         for l in LANGUAGES
     ]:
 
+        branch = context.user_data.get("branch", BRANCHES[0])
+
+        next_shift_num = get_next_available_shift_num(branch)
+        if next_shift_num is None:
+            await update.message.reply_text(
+                LANGUAGES[lang]["all_shifts_done"].format(branch=branch),
+                reply_markup=get_menu_keyboard(lang, update.effective_user)
+            )
+            return MAIN_MENU
+
+        shift_key = f"shift_{next_shift_num}"
+        shift_name = LANGUAGES[lang][shift_key]
+
+        context.user_data["expected_shift_num"] = next_shift_num
+        context.user_data["expected_shift_name"] = shift_name
+        context.user_data["branch"] = branch
+
         keyboard = [
-            [LANGUAGES[lang]["shift_1"]],
-            [LANGUAGES[lang]["shift_2"]],
-            [LANGUAGES[lang]["shift_3"]]
+            [shift_name],
+            [LANGUAGES[lang]["btn_back"]]
         ]
 
         await update.message.reply_text(
-
-            LANGUAGES[lang]["choose_shift"],
-
+            f"📍 **{branch}**\n\n" + LANGUAGES[lang]["choose_shift"],
             reply_markup=ReplyKeyboardMarkup(
                 keyboard,
                 one_time_keyboard=True,
                 resize_keyboard=True
-            )
+            ),
+            parse_mode="Markdown"
         )
 
         return SELECT_SHIFT
@@ -1032,36 +1174,52 @@ async def handle_main_menu(update, context):
 async def select_shift(update, context):
 
     user_id = update.effective_user.id
+    lang = USER_LANGS.get(user_id, "fa")
+    text = update.message.text.strip()
 
-    lang = USER_LANGS.get(
-        user_id,
-        "fa"
-    )
+    btn_backs = [LANGUAGES[l]["btn_back"] for l in LANGUAGES]
+    if text in btn_backs:
+        return await show_main_menu(update, context)
 
-    text = update.message.text
+    branch = context.user_data.get("branch", BRANCHES[0])
+    expected_num = context.user_data.get("expected_shift_num")
+    expected_name = context.user_data.get("expected_shift_name")
 
-    valid_shifts = [
-        LANGUAGES[lang]["shift_1"],
-        LANGUAGES[lang]["shift_2"],
-        LANGUAGES[lang]["shift_3"]
-    ]
+    if not expected_num:
+        expected_num = get_next_available_shift_num(branch)
+        if expected_num is None:
+            await update.message.reply_text(
+                LANGUAGES[lang]["all_shifts_done"].format(branch=branch),
+                reply_markup=get_menu_keyboard(lang, update.effective_user)
+            )
+            return await show_main_menu(update, context)
+        expected_name = LANGUAGES[lang][f"shift_{expected_num}"]
+        context.user_data["expected_shift_num"] = expected_num
+        context.user_data["expected_shift_name"] = expected_name
 
-    if text not in valid_shifts:
+    valid_expected_texts = [LANGUAGES[l][f"shift_{expected_num}"] for l in LANGUAGES]
 
+    if text not in valid_expected_texts and text != expected_name:
+        keyboard = [
+            [expected_name],
+            [LANGUAGES[lang]["btn_back"]]
+        ]
         await update.message.reply_text(
-            LANGUAGES[lang]["choose_shift"]
+            f"⚠️ لطفاً صندوق را به ترتیب انتخاب فرمایید:\n📍 {branch}",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                one_time_keyboard=True,
+                resize_keyboard=True
+            )
         )
-
         return SELECT_SHIFT
 
     context.user_data["shift"] = text
 
     await update.message.reply_text(
-
         LANGUAGES[lang]["enter_amount"].format(
             shift=text
         ),
-
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -1075,110 +1233,176 @@ async def select_shift(update, context):
 async def enter_amount(update, context):
 
     user_id = update.effective_user.id
-
-    lang = USER_LANGS.get(
-        user_id,
-        "fa"
-    )
-
+    lang = USER_LANGS.get(user_id, "fa")
     text = update.message.text.strip()
 
-    try:
+    btn_cancels = [LANGUAGES[l]["btn_back"] for l in LANGUAGES] + [LANGUAGES[l]["btn_cancel"] for l in LANGUAGES]
+    if text in btn_cancels:
+        return await show_main_menu(update, context)
 
+    try:
         amount = float(
             text.replace(",", ".")
         )
-
         if amount < 0:
             raise ValueError
-
     except ValueError:
-
         await update.message.reply_text(
             LANGUAGES[lang]["invalid_amount"]
         )
-
         return ENTER_AMOUNT
 
+    branch = context.user_data.get("branch", BRANCHES[0])
+    shift = context.user_data.get("shift", LANGUAGES[lang]["shift_1"])
 
-    now = datetime.now(
-        GERMANY_TZ
+    context.user_data["pending_amount"] = amount
+    context.user_data["pending_shift"] = shift
+    context.user_data["pending_branch"] = branch
+
+    confirm_msg = LANGUAGES[lang]["confirm_title"].format(
+        branch=branch,
+        shift=shift,
+        amount=amount
     )
 
-    user_display = (
-        update.effective_user.username
-        or update.effective_user.first_name
-        or str(user_id)
-    )
-
-    branch = context.user_data.get(
-        "branch",
-        "Ludwigshafen"
-    )
-
-    shift = context.user_data.get(
-        "shift"
-    )
-
-
-    # --------------------------------------------------------
-    # SAVE TO SQLITE
-    # --------------------------------------------------------
-
-    conn = get_db()
-
-    conn.execute(
-        """
-        INSERT INTO records
-        (
-            date,
-            time,
-            branch,
-            shift,
-            amount,
-            user,
-            telegram_user_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-
-        (
-            now.strftime("%Y-%m-%d"),
-            now.strftime("%H:%M:%S"),
-            branch,
-            shift,
-            amount,
-            user_display,
-            user_id
-        )
-    )
-
-    conn.commit()
-    conn.close()
-
+    confirm_keyboard = [
+        [LANGUAGES[lang]["btn_confirm"]],
+        [LANGUAGES[lang]["btn_edit_amount"]],
+        [LANGUAGES[lang]["btn_cancel"]]
+    ]
 
     await update.message.reply_text(
+        confirm_msg,
+        reply_markup=ReplyKeyboardMarkup(
+            confirm_keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True
+        ),
+        parse_mode="Markdown"
+    )
 
-        LANGUAGES[lang]["success_reg"].format(
+    return CONFIRM_AMOUNT
 
-            date=now.strftime("%d.%m.%Y"),
 
-            time=now.strftime("%H:%M"),
+# ============================================================
+# CONFIRM AMOUNT
+# ============================================================
 
-            branch=branch,
+async def confirm_amount(update, context):
 
-            shift=shift,
+    user_id = update.effective_user.id
+    lang = USER_LANGS.get(user_id, "fa")
+    text = update.message.text.strip()
 
-            amount=amount,
+    # ۱. تایید و ثبت نهایی
+    if text in [LANGUAGES[l]["btn_confirm"] for l in LANGUAGES]:
+        amount = context.user_data.get("pending_amount")
+        shift = context.user_data.get("pending_shift")
+        branch = context.user_data.get("pending_branch", BRANCHES[0])
 
-            user=user_display
+        if amount is None or shift is None:
+            await update.message.reply_text("❌ خطایی رخ داد. لطفاً مجدداً تلاش کنید.")
+            return await show_main_menu(update, context)
+
+        now = datetime.now(GERMANY_TZ)
+        user_display = (
+            update.effective_user.username
+            or update.effective_user.first_name
+            or str(user_id)
         )
-    )
 
-    return await show_main_menu(
-        update,
-        context
-    )
+        b_date = get_business_date()
+
+        conn = get_db()
+        conn.execute(
+            """
+            INSERT INTO records
+            (
+                date,
+                time,
+                branch,
+                shift,
+                amount,
+                user,
+                telegram_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                b_date,
+                now.strftime("%H:%M:%S"),
+                branch,
+                shift,
+                amount,
+                user_display,
+                user_id
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        context.user_data.pop("pending_amount", None)
+        context.user_data.pop("pending_shift", None)
+        context.user_data.pop("pending_branch", None)
+        context.user_data.pop("expected_shift_num", None)
+        context.user_data.pop("expected_shift_name", None)
+
+        try:
+            date_display = datetime.strptime(b_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+        except Exception:
+            date_display = b_date
+
+        await update.message.reply_text(
+            LANGUAGES[lang]["success_reg"].format(
+                date=date_display,
+                time=now.strftime("%H:%M"),
+                branch=branch,
+                shift=shift,
+                amount=amount,
+                user=user_display
+            )
+        )
+        return await show_main_menu(update, context)
+
+    # ۲. اصلاح مبلغ
+    elif text in [LANGUAGES[l]["btn_edit_amount"] for l in LANGUAGES]:
+        shift = context.user_data.get("pending_shift", "")
+        await update.message.reply_text(
+            LANGUAGES[lang]["enter_amount"].format(shift=shift),
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ENTER_AMOUNT
+
+    # ۳. انصراف / بازگشت
+    elif text in [LANGUAGES[l]["btn_cancel"] for l in LANGUAGES] or text in [LANGUAGES[l]["btn_back"] for l in LANGUAGES]:
+        context.user_data.pop("pending_amount", None)
+        context.user_data.pop("pending_shift", None)
+        context.user_data.pop("pending_branch", None)
+        await update.message.reply_text(
+            LANGUAGES[lang]["action_cancelled"]
+        )
+        return await show_main_menu(update, context)
+
+    else:
+        confirm_keyboard = [
+            [LANGUAGES[lang]["btn_confirm"]],
+            [LANGUAGES[lang]["btn_edit_amount"]],
+            [LANGUAGES[lang]["btn_cancel"]]
+        ]
+        await update.message.reply_text(
+            LANGUAGES[lang]["confirm_title"].format(
+                branch=context.user_data.get("pending_branch", BRANCHES[0]),
+                shift=context.user_data.get("pending_shift", ""),
+                amount=context.user_data.get("pending_amount", 0.0)
+            ),
+            reply_markup=ReplyKeyboardMarkup(
+                confirm_keyboard,
+                resize_keyboard=True,
+                one_time_keyboard=True
+            ),
+            parse_mode="Markdown"
+        )
+        return CONFIRM_AMOUNT
 
 
 # ============================================================
@@ -1875,6 +2099,13 @@ def main():
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     enter_amount
+                )
+            ],
+
+            CONFIRM_AMOUNT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    confirm_amount
                 )
             ],
 
