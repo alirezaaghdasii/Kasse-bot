@@ -27,13 +27,22 @@ from telegram.ext import (
 # CONFIGURATION
 # ============================================================
 
-# !!! توکن جدید BotFather را اینجا قرار بده !!!
-BOT_TOKEN = "8644365577:AAHXHFZOdsGZmrvKPHBrzUjzNzEf9_0dDks"
+# توکن ربات: اولویت با متغیر محیطی BOT_TOKEN (در سرور یا فایل .env) است
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8644365577:AAG8u6IaL0XESA_mfBWmdn-7sJo_C13qtSo")
 
-ADMIN_USERNAME = "alirezaaghdasii"
+# لیست ادمین‌ها: می‌تواند شامل شناسه عددی تلگرام یا نام کاربری (با یا بدون @) باشد
+# همچنین از متغیر محیطی ADMIN_USERS (جداشده با کاما) در سرور Render پشتیبانی می‌کند
+ADMIN_USERS = [
+    "alirezaaghdasii",
+]
 
+ADMIN_USERNAME = "alirezaaghdasii"  # جهت سازگاری
+
+# لیست کاربران مجاز به ثبت صندوق: شامل شناسه عددی تلگرام یا نام کاربری
+# (توجه: کلیه ادمین‌ها به صورت خودکار مجاز هستند)
+# همچنین از متغیر محیطی ALLOWED_USERS (جداشده با کاما) در سرور Render پشتیبانی می‌کند
 ALLOWED_USERS = [
-    "alirezaaghdasii"
+    "alirezaaghdasii",
 ]
 
 # سه شعبه واقعی
@@ -560,29 +569,116 @@ LANGUAGES = {
 USER_LANGS = {}
 
 
-def is_user_allowed(username):
-    if not username:
+def _normalize_identifier(val):
+    if val is None:
+        return ""
+    return str(val).strip().lstrip("@").lower()
+
+
+def get_all_admin_identifiers():
+    admins = set(_normalize_identifier(x) for x in ADMIN_USERS if x is not None)
+    if ADMIN_USERNAME:
+        admins.add(_normalize_identifier(ADMIN_USERNAME))
+
+    env_admins = os.environ.get("ADMIN_USERS", "")
+    if env_admins:
+        for a in env_admins.split(","):
+            norm = _normalize_identifier(a)
+            if norm:
+                admins.add(norm)
+    return admins
+
+
+def get_all_allowed_identifiers():
+    allowed = set(_normalize_identifier(x) for x in ALLOWED_USERS if x is not None)
+    # کلیه ادمین‌ها به صورت خودکار مجاز هستند
+    allowed.update(get_all_admin_identifiers())
+
+    env_allowed = os.environ.get("ALLOWED_USERS", "")
+    if env_allowed:
+        for u in env_allowed.split(","):
+            norm = _normalize_identifier(u)
+            if norm:
+                allowed.add(norm)
+    return allowed
+
+
+def is_admin(user_or_username=None, user_id=None):
+    """
+    بررسی دسترسی ادمین.
+    پشتیبانی کامل از آبجکت User تلگرام، آیدی عددی و نام کاربری (با یا بدون @).
+    """
+    if user_or_username is None and user_id is None:
         return False
 
-    return username.lower() in [
-        u.lower() for u in ALLOWED_USERS
-    ]
+    u_name = None
+    u_id = user_id
+
+    if hasattr(user_or_username, "id"):
+        u_id = user_or_username.id
+        u_name = user_or_username.username
+    elif isinstance(user_or_username, int):
+        u_id = user_or_username
+    elif isinstance(user_or_username, str):
+        if user_or_username.isdigit():
+            u_id = int(user_or_username)
+        else:
+            u_name = user_or_username
+
+    admin_set = get_all_admin_identifiers()
+
+    if u_id is not None and str(u_id) in admin_set:
+        return True
+
+    if u_name and _normalize_identifier(u_name) in admin_set:
+        return True
+
+    return False
 
 
-def is_admin(username):
-    return (
-        username
-        and username.lower() == ADMIN_USERNAME.lower()
-    )
+def is_user_allowed(user_or_username=None, user_id=None):
+    """
+    بررسی مجاز بودن کاربر جهت ورود و ثبت صندوق.
+    پشتیبانی کامل از آبجکت User تلگرام، آیدی عددی و نام کاربری (با یا بدون @).
+    """
+    if user_or_username is None and user_id is None:
+        return False
+
+    if is_admin(user_or_username, user_id):
+        return True
+
+    u_name = None
+    u_id = user_id
+
+    if hasattr(user_or_username, "id"):
+        u_id = user_or_username.id
+        u_name = user_or_username.username
+    elif isinstance(user_or_username, int):
+        u_id = user_or_username
+    elif isinstance(user_or_username, str):
+        if user_or_username.isdigit():
+            u_id = int(user_or_username)
+        else:
+            u_name = user_or_username
+
+    allowed_set = get_all_allowed_identifiers()
+
+    if u_id is not None and str(u_id) in allowed_set:
+        return True
+
+    if u_name and _normalize_identifier(u_name) in allowed_set:
+        return True
+
+    return False
 
 
-def get_menu_keyboard(lang, username):
+def get_menu_keyboard(lang, user_or_username=None):
 
     keyboard = [
         [LANGUAGES[lang]["btn_register"]]
     ]
 
-    if is_admin(username):
+    if is_admin(user_or_username):
         keyboard.append([
             LANGUAGES[lang]["btn_report"]
         ])
@@ -654,15 +750,27 @@ def parse_date(date_text):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    username = update.effective_user.username
+    user = update.effective_user
+    if not user:
+        return ConversationHandler.END
 
-    if not is_user_allowed(username):
+    if not is_user_allowed(user):
+        user_id = user.id
+        username_str = f"@{user.username}" if user.username else "ندارد"
+        name_str = f"{user.first_name or ''} {user.last_name or ''}".strip() or "کاربر تلگرام"
+
         await update.message.reply_text(
-            "⛔️ دسترسی شما مجاز نیست / Access Denied."
+            f"⛔️ **دسترسی شما مجاز نیست / Access Denied**\n\n"
+            f"📋 **اطلاعات حساب تلگرام شما:**\n"
+            f"🆔 **شناسه عددی (Telegram ID):** `{user_id}`\n"
+            f"👤 **نام کاربری:** {username_str}\n"
+            f"🏷 **نام حساب:** {name_str}\n\n"
+            f"💡 لطفاً شناسه عددی بالا (`{user_id}`) را کپی کرده و برای مدیر ربات ارسال فرمایید تا دسترسی شما فعال شود.",
+            parse_mode="Markdown"
         )
         return ConversationHandler.END
 
-    user_id = update.effective_user.id
+    user_id = user.id
 
     if user_id in USER_LANGS:
 
@@ -786,7 +894,7 @@ async def show_main_menu(update, context):
 
         reply_markup=get_menu_keyboard(
             lang,
-            username
+            update.effective_user
         )
     )
 
@@ -845,7 +953,7 @@ async def handle_main_menu(update, context):
             LANGUAGES[l]["btn_report"]
             for l in LANGUAGES
         ]
-        and is_admin(username)
+        and is_admin(update.effective_user)
     ):
 
         await update.message.reply_text(
@@ -869,7 +977,7 @@ async def handle_main_menu(update, context):
             LANGUAGES[l]["btn_excel"]
             for l in LANGUAGES
         ]
-        and is_admin(username)
+        and is_admin(update.effective_user)
     ):
 
         await update.message.reply_text(
@@ -1690,6 +1798,26 @@ async def excel_branch(update, context):
     )
 
 
+async def get_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور کمکی /id یا /myid برای دریافت شناسه عددی تلگرام کاربر"""
+    user = update.effective_user
+    if not user:
+        return
+
+    user_id = user.id
+    username_str = f"@{user.username}" if user.username else "ندارد"
+    name_str = f"{user.first_name or ''} {user.last_name or ''}".strip() or "کاربر تلگرام"
+
+    await update.message.reply_text(
+        f"📋 **مشخصات حساب تلگرام شما:**\n\n"
+        f"🆔 **شناسه عددی (Telegram ID):** `{user_id}`\n"
+        f"👤 **نام کاربری (Username):** {username_str}\n"
+        f"🏷 **نام:** {name_str}\n\n"
+        f"💡 این شناسه عددی (`{user_id}`) را کپی کرده و برای مدیر ربات ارسال کنید تا دسترسی شما را ثبت کند.",
+        parse_mode="Markdown"
+    )
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -1805,10 +1933,17 @@ def main():
             CommandHandler(
                 "start",
                 start
+            ),
+            CommandHandler(
+                ["id", "myid"],
+                get_my_id
             )
         ]
     )
 
+    app.add_handler(
+        CommandHandler(["id", "myid"], get_my_id)
+    )
 
     app.add_handler(
         conv_handler
